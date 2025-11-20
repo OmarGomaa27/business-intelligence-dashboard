@@ -1,0 +1,32 @@
+# Virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# VS Code settings
+.vscode/
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Environment files
+*.env
+*.ini
+
+# Hugging Face cache
+huggingface/
+
+# Data files
+data/*.xlsx
