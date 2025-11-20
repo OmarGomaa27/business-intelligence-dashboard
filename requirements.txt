@@ -1,0 +1,6 @@
+pandas
+gradio
+matplotlib
+seaborn
+plotly
+numpy
