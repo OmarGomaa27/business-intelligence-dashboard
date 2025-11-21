@@ -1,5 +1,7 @@
 import gradio as gr
 import pandas as pd
+df = None
+
 
 from data_processor import load_data, get_basic_info, preview_data
 
@@ -16,6 +18,7 @@ def create_dashboard():
             preview_output = gr.DataFrame(label="Data Preview")
 
             def handle_upload(file):
+                global df
                 if file is None:
                     return {}, None
                 
@@ -32,7 +35,29 @@ def create_dashboard():
             )
 
         with gr.Tab("Statistics"):
-            pass
+            gr.markdown("### Statistical Summaries")
+
+            stats_button =gr.Button("Generate Statistics")
+
+            numeric_output = gr.DataFrame(label="Numeric Summary")
+            categorical_output = gr.JSON(label="Categorical Summary")
+            missing_output = gr.JSON(label="Missing Values Report")
+            correlation_output = gr.DataFrame(label="Correlation Matrix")
+        def generate_statistics(file):
+            global df
+            if file is None:
+                return None, None, None, None
+            
+            num = numeric_summary(df)
+            cat = categorical_summary(df)
+            missing = missing_values_report(df)
+            corr = correlation_matrix(df)
+            return num, cat, missing, corr
+        stats_button.click(
+            fn=generate_statistics,
+            inputs=None,
+            outputs=[numeric_output, categorical_output, missing_output, correlation_output]
+        )
 
         with gr.Tab("Filter & Explore"):
             pass
