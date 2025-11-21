@@ -4,6 +4,13 @@ df = None
 
 
 from data_processor import load_data, get_basic_info, preview_data
+from data_processor import (
+    numeric_summary,
+    categorical_summary,
+    missing_values_report,
+    correlation_matrix
+)
+
 
 
 def create_dashboard():
@@ -35,7 +42,7 @@ def create_dashboard():
             )
 
         with gr.Tab("Statistics"):
-            gr.markdown("### Statistical Summaries")
+            gr.Markdown("### Statistical Summaries")
 
             stats_button =gr.Button("Generate Statistics")
 
