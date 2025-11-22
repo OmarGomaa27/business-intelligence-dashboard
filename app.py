@@ -5,6 +5,9 @@ df = None
 
 from data_processor import load_data, get_basic_info, preview_data
 from data_processor import (
+    load_data,
+    get_basic_info,
+    preview_data,
     numeric_summary,
     categorical_summary,
     missing_values_report,
