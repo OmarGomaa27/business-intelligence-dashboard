@@ -30,4 +30,5 @@ Thumbs.db
 huggingface/
 
 # Data files
-data/*.xlsx
+data/*
+!data/.gitkeep
