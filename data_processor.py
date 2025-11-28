@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+import numpy as np
+
 
 def load_data(file):
     """
