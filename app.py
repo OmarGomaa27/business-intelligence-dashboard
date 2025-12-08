@@ -152,12 +152,12 @@ def create_dashboard():
                     with gr.Row():
                         date_start = gr.Textbox(
                             label="From (YYYY-MM-DD)",
-                            placeholder="2010-12-01",
+                            placeholder="YYYY-MM-DD",
                             interactive=True,
                         )
                         date_end = gr.Textbox(
                             label="To (YYYY-MM-DD)",
-                            placeholder="2011-12-09",
+                            placeholder="YYYY-MM-DD",
                             interactive=True,
                         )
 
