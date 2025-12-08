@@ -1,15 +1,17 @@
 """
 Business Intelligence Dashboard
---------------------------------
+-------------------------------
 This dashboard provides:
 - Data upload for CSV/Excel files
 - Automatic dataset profiling
 - Statistical summaries (numeric and categorical)
 - Missing value reports and correlation matrix
 - Interactive filtering (categorical, numeric, date-based)
-- Modular, maintainable structure suitable for academic submission
+- Modular structure suitable for academic submission
 
 Author: Omar Gomaa
+Course: CS 5130 - Applied Programming and Data Processing for AI
+Institution: Northeastern University
 """
 
 import gradio as gr
@@ -25,18 +27,36 @@ from data_processor import (
     correlation_matrix,
 )
 
+from visualizations import (
+    create_time_series_plot,
+    create_distribution_plot,
+    create_category_bar_chart,
+    create_scatter_plot,
+    create_correlation_heatmap,
+    save_plot_as_png,
+)
+
+from insights import generate_all_insights
 from utils import get_filter_options
+
+# Constants
+DEFAULT_PREVIEW_ROWS = 5
+DEFAULT_FILTER_DISPLAY_ROWS = 100
+MAX_SCATTER_POINTS = 5000
+TOP_N_CATEGORIES = 20
+CHART_DPI = 150
 
 
 def create_dashboard():
-    """Construct the full multi-tab Business Intelligence Dashboard user interface."""
-
+    """Constructs and returns the full multi-tab Business Intelligence Dashboard interface."""
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
 
         gr.Markdown("# Business Intelligence Dashboard")
+        gr.Markdown("Upload a dataset to generate summary statistics, visualizations, and insights.")
 
-        # Global dataframe stored in application state
-        df_state = gr.State(value=None)
+        # Application state
+        df_state = gr.State(value=None)                # Full dataset
+        filtered_state = gr.State(value=None)          # Filtered dataset
 
         file_input = gr.File(label="Upload CSV or Excel File")
 
@@ -50,13 +70,13 @@ def create_dashboard():
             preview_output = gr.DataFrame(label="Data Preview")
 
             def handle_upload(file):
-                """Load dataset, return metadata and preview."""
+                """Loads the dataset and returns metadata and a preview."""
                 if file is None:
                     return None, {}, None
 
                 df = load_data(file)
                 info = get_basic_info(df)
-                preview = preview_data(df)
+                preview = preview_data(df, n=DEFAULT_PREVIEW_ROWS)
                 return df, info, preview
 
             file_input.change(
@@ -71,7 +91,7 @@ def create_dashboard():
         with gr.Tab("Statistics"):
             gr.Markdown("### Summary Statistics")
 
-            stats_button = gr.Button("Generate Statistics")
+            stats_button = gr.Button("Generate Statistics", variant="primary")
 
             numeric_output = gr.DataFrame(label="Numeric Summary")
             categorical_output = gr.JSON(label="Categorical Summary")
@@ -79,13 +99,12 @@ def create_dashboard():
             corr_output = gr.DataFrame(label="Correlation Matrix")
 
             def generate_statistics(df):
-                """Compute summary statistics for currently loaded dataset."""
+                """Computes summary statistics for the dataset."""
                 if df is None:
                     return None, None, None, None
 
                 num = numeric_summary(df)
                 num = num.reset_index().rename(columns={"index": "Metric"})
-
                 cat = categorical_summary(df)
                 missing = missing_values_report(df)
                 corr = correlation_matrix(df)
@@ -105,20 +124,23 @@ def create_dashboard():
             gr.Markdown("### Interactive Data Filtering")
 
             with gr.Row():
+
                 # -------------------------------------------------------
-                # Left Column: Filter Controls
+                # Left column: Filter Controls
                 # -------------------------------------------------------
                 with gr.Column(scale=1):
                     filter_load_btn = gr.Button("Load Filter Options", variant="secondary")
-                    
+
                     gr.Markdown("**Categorical Filter**")
-                    cat_column = gr.Dropdown(label="Select Column", choices=[], interactive=True)
-                    cat_values = gr.Dropdown(label="Select Values", choices=[], multiselect=True, interactive=True)
+                    cat_column = gr.Dropdown(label="Column", choices=[], interactive=True)
+                    cat_values = gr.Dropdown(
+                        label="Values", choices=[], multiselect=True, interactive=True
+                    )
 
                     gr.Markdown("---")
 
                     gr.Markdown("**Numeric Filter**")
-                    num_column = gr.Dropdown(label="Select Column", choices=[], interactive=True)
+                    num_column = gr.Dropdown(label="Column", choices=[], interactive=True)
                     with gr.Row():
                         num_min = gr.Number(label="Min", interactive=True)
                         num_max = gr.Number(label="Max", interactive=True)
@@ -126,10 +148,18 @@ def create_dashboard():
                     gr.Markdown("---")
 
                     gr.Markdown("**Date Filter**")
-                    date_column = gr.Dropdown(label="Select Column", choices=[], interactive=True)
+                    date_column = gr.Dropdown(label="Column", choices=[], interactive=True)
                     with gr.Row():
-                        date_start = gr.Textbox(label="From (YYYY-MM-DD)", placeholder="2010-12-01", interactive=True)
-                        date_end = gr.Textbox(label="To (YYYY-MM-DD)", placeholder="2011-12-09", interactive=True)
+                        date_start = gr.Textbox(
+                            label="From (YYYY-MM-DD)",
+                            placeholder="2010-12-01",
+                            interactive=True,
+                        )
+                        date_end = gr.Textbox(
+                            label="To (YYYY-MM-DD)",
+                            placeholder="2011-12-09",
+                            interactive=True,
+                        )
 
                     gr.Markdown("---")
 
@@ -137,35 +167,51 @@ def create_dashboard():
                     clear_btn = gr.Button("Clear Filters")
 
                 # -------------------------------------------------------
-                # Right Column: Filter Results
+                # Right column: Filter Results
                 # -------------------------------------------------------
                 with gr.Column(scale=2):
-                    row_count = gr.Markdown("**Click 'Load Filter Options' to begin**")
+                    row_count = gr.Markdown("Click 'Load Filter Options' to begin.")
                     filtered_data = gr.DataFrame(interactive=False)
 
-            # -----------------------------------------------------------
-            # Populate selectable filter values based on dataset
-            # -----------------------------------------------------------
             def setup_filters(df):
+                """Initializes filter dropdown options based on dataset columns."""
                 if df is None:
                     return (
                         gr.update(choices=[]),
                         gr.update(choices=[]),
                         gr.update(choices=[]),
-                        "**Upload a file first**",
+                        "Upload a dataset to begin.",
                         None,
                     )
 
                 numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
                 cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
-                date_cols = [col for col in df.columns if "datetime" in str(df[col].dtype)]
+                date_cols = [
+                    col for col in df.columns if "datetime" in str(df[col].dtype)
+                ]
+
+                # Remove date-like columns from categorical list
+                date_keywords = ["date", "time", "timestamp", "created", "updated"]
+                cat_cols = [
+                    col for col in cat_cols
+                    if not any(keyword in col.lower() for keyword in date_keywords)
+                ]
+
+                # Add string-based date-like columns to date candidates
+                for col in df.columns:
+                    if (
+                        col not in date_cols
+                        and any(keyword in col.lower() for keyword in date_keywords)
+                        and df[col].dtype == "object"
+                    ):
+                        date_cols.append(col)
 
                 return (
                     gr.update(choices=cat_cols, value=None),
                     gr.update(choices=numeric_cols, value=None),
                     gr.update(choices=date_cols, value=None),
-                    f"**{len(df):,} rows** - Select filters and click Apply",
-                    df.head(100),
+                    f"{len(df):,} rows available. Select filters and apply.",
+                    df.head(DEFAULT_FILTER_DISPLAY_ROWS),
                 )
 
             file_input.change(
@@ -173,17 +219,14 @@ def create_dashboard():
                 inputs=df_state,
                 outputs=[cat_column, num_column, date_column, row_count, filtered_data],
             )
-
             filter_load_btn.click(
                 fn=setup_filters,
                 inputs=df_state,
                 outputs=[cat_column, num_column, date_column, row_count, filtered_data],
             )
 
-            # -----------------------------------------------------------
-            # Update available category values when user selects a column
-            # -----------------------------------------------------------
             def update_cat_values(df, col):
+                """Returns unique values for the selected categorical column."""
                 if df is None or col is None:
                     return gr.update(choices=[], value=[])
 
@@ -196,67 +239,82 @@ def create_dashboard():
                 outputs=cat_values,
             )
 
-            # -----------------------------------------------------------
-            # Apply all user-selected filters
-            # -----------------------------------------------------------
             def apply_filters(df, cat_col, cat_vals, num_col, n_min, n_max, date_col, d_start, d_end):
+                """Applies categorical, numeric, and date filters to the dataset."""
                 if df is None:
-                    return "**Upload a file first**", None
+                    return "Upload a dataset to begin.", None, None
 
                 filtered = df.copy()
 
-                # Categorical filter
+                # Categorical filtering
                 if cat_col and cat_vals:
                     filtered = filtered[filtered[cat_col].astype(str).isin(cat_vals)]
 
-                # Numeric filter
-                if num_col:
+                # Numeric filtering
+                if num_col in filtered.columns:
                     if n_min is not None:
                         filtered = filtered[filtered[num_col] >= n_min]
                     if n_max is not None:
                         filtered = filtered[filtered[num_col] <= n_max]
 
-                # Date filter
-                if date_col:
-                    if d_start and d_start.strip():
+                # Date filtering
+                if date_col in filtered.columns:
+                    if not pd.api.types.is_datetime64_any_dtype(filtered[date_col]):
+                        filtered[date_col] = pd.to_datetime(filtered[date_col], errors="coerce")
+
+                    if d_start:
                         try:
-                            start_dt = pd.to_datetime(d_start.strip())
+                            start_dt = pd.to_datetime(d_start)
                             filtered = filtered[filtered[date_col] >= start_dt]
-                        except:
+                        except Exception:
                             pass
-                    if d_end and d_end.strip():
+
+                    if d_end:
                         try:
-                            end_dt = pd.to_datetime(d_end.strip()) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+                            end_dt = pd.to_datetime(d_end) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
                             filtered = filtered[filtered[date_col] <= end_dt]
-                        except:
+                        except Exception:
                             pass
 
                 total = len(df)
                 count = len(filtered)
 
-                return f"**{count:,} of {total:,} rows** match your filters", filtered.head(100)
+                return (
+                    f"{count:,} of {total:,} rows match the applied filters.",
+                    filtered.head(DEFAULT_FILTER_DISPLAY_ROWS),
+                    filtered,
+                )
 
             apply_btn.click(
                 fn=apply_filters,
-                inputs=[df_state, cat_column, cat_values, num_column, num_min, num_max, date_column, date_start, date_end],
-                outputs=[row_count, filtered_data],
+                inputs=[
+                    df_state,
+                    cat_column,
+                    cat_values,
+                    num_column,
+                    num_min,
+                    num_max,
+                    date_column,
+                    date_start,
+                    date_end,
+                ],
+                outputs=[row_count, filtered_data, filtered_state],
             )
 
-            # -----------------------------------------------------------
-            # Clear all filters and reset view
-            # -----------------------------------------------------------
             def clear_filters(df):
+                """Resets all filter controls to their default state."""
                 if df is None:
                     return (
                         None, [], None, None, None, None, "", "",
-                        "**Upload a file first**",
-                        None,
+                        "Upload a dataset to begin.",
+                        None, None,
                     )
 
                 return (
                     None, [], None, None, None, None, "", "",
-                    f"**{len(df):,} rows** - Select filters and click Apply",
-                    df.head(100),
+                    f"{len(df):,} rows available. Select filters and apply.",
+                    df.head(DEFAULT_FILTER_DISPLAY_ROWS),
+                    df,
                 )
 
             clear_btn.click(
@@ -267,7 +325,32 @@ def create_dashboard():
                     num_column, num_min, num_max,
                     date_column, date_start, date_end,
                     row_count, filtered_data,
+                    filtered_state,
                 ],
+            )
+
+            # Export CSV
+            gr.Markdown("---")
+            gr.Markdown("### Export Filtered Data")
+
+            with gr.Row():
+                export_csv_btn = gr.Button("Export Filtered Data as CSV")
+                csv_output = gr.File(label="Download CSV")
+
+            def export_csv(filtered_df, full_df):
+                """Exports the filtered dataset or the full dataset as a CSV file."""
+                df = filtered_df if filtered_df is not None else full_df
+                if df is None:
+                    return None
+
+                filepath = "filtered_data.csv"
+                df.to_csv(filepath, index=False)
+                return filepath
+
+            export_csv_btn.click(
+                fn=export_csv,
+                inputs=[filtered_state, df_state],
+                outputs=csv_output,
             )
 
         # ===============================================================
@@ -275,14 +358,14 @@ def create_dashboard():
         # ===============================================================
         with gr.Tab("Visualizations"):
             gr.Markdown("### Data Visualizations")
-            
+
             viz_load_btn = gr.Button("Load Visualization Options", variant="secondary")
 
             with gr.Tabs():
 
-                # --- Time Series ---
+                # Time Series
                 with gr.Tab("Time Series"):
-                    gr.Markdown("**Trends Over Time**")
+                    gr.Markdown("Visualize aggregated trends over time.")
                     with gr.Row():
                         ts_date_col = gr.Dropdown(label="Date Column", choices=[], interactive=True)
                         ts_value_col = gr.Dropdown(label="Value Column", choices=[], interactive=True)
@@ -295,9 +378,9 @@ def create_dashboard():
                     ts_btn = gr.Button("Generate Time Series", variant="primary")
                     ts_plot = gr.Plot()
 
-                # --- Distribution ---
+                # Distribution
                 with gr.Tab("Distribution"):
-                    gr.Markdown("**Distribution of Values**")
+                    gr.Markdown("Explore the distribution of numerical values.")
                     with gr.Row():
                         dist_col = gr.Dropdown(label="Numeric Column", choices=[], interactive=True)
                         dist_type = gr.Dropdown(
@@ -309,9 +392,9 @@ def create_dashboard():
                     dist_btn = gr.Button("Generate Distribution", variant="primary")
                     dist_plot = gr.Plot()
 
-                # --- Category Analysis ---
+                # Category Analysis
                 with gr.Tab("Category Analysis"):
-                    gr.Markdown("**Analysis by Category**")
+                    gr.Markdown("Analyze aggregated values for categorical variables.")
                     with gr.Row():
                         cat_viz_col = gr.Dropdown(label="Category Column", choices=[], interactive=True)
                         cat_value_col = gr.Dropdown(label="Value Column", choices=[], interactive=True)
@@ -324,9 +407,9 @@ def create_dashboard():
                     cat_btn = gr.Button("Generate Category Chart", variant="primary")
                     cat_plot = gr.Plot()
 
-                # --- Scatter & Correlation ---
+                # Scatter & Correlation
                 with gr.Tab("Scatter & Correlation"):
-                    gr.Markdown("**Relationships Between Variables**")
+                    gr.Markdown("Visualize relationships between numerical variables.")
                     with gr.Row():
                         scatter_x = gr.Dropdown(label="X Axis", choices=[], interactive=True)
                         scatter_y = gr.Dropdown(label="Y Axis", choices=[], interactive=True)
@@ -335,8 +418,8 @@ def create_dashboard():
                         corr_btn = gr.Button("Correlation Heatmap", variant="secondary")
                     scatter_plot = gr.Plot()
 
-            # Populate dropdowns for visualizations
             def setup_viz_dropdowns(df):
+                """Populates visualization dropdowns based on data types."""
                 if df is None:
                     empty = gr.update(choices=[])
                     return [empty] * 7
@@ -345,160 +428,87 @@ def create_dashboard():
                 cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
                 date_cols = [c for c in df.columns if "datetime" in str(df[c].dtype)]
 
+                # Add string-based date-like columns
+                date_keywords = ["date", "time", "timestamp", "created", "updated"]
+                for col in df.columns:
+                    if col not in date_cols:
+                        if any(keyword in col.lower() for keyword in date_keywords):
+                            date_cols.append(col)
+                            if col in cat_cols:
+                                cat_cols.remove(col)
+
+                # Exclude ID-like columns from distribution charts
+                id_keywords = ["id", "invoice", "code", "number", "no", "num"]
+                numeric_for_dist = [
+                    col for col in numeric_cols
+                    if not any(keyword in col.lower() for keyword in id_keywords)
+                ]
+                if not numeric_for_dist:
+                    numeric_for_dist = numeric_cols
+
                 return (
-                    gr.update(choices=date_cols),      # ts_date_col
-                    gr.update(choices=numeric_cols),   # ts_value_col
-                    gr.update(choices=numeric_cols),   # dist_col
-                    gr.update(choices=cat_cols),       # cat_viz_col
-                    gr.update(choices=numeric_cols),   # cat_value_col
-                    gr.update(choices=numeric_cols),   # scatter_x
-                    gr.update(choices=numeric_cols),   # scatter_y
+                    gr.update(choices=date_cols),
+                    gr.update(choices=numeric_cols),
+                    gr.update(choices=numeric_for_dist),
+                    gr.update(choices=cat_cols),
+                    gr.update(choices=numeric_cols),
+                    gr.update(choices=numeric_cols),
+                    gr.update(choices=numeric_cols),
                 )
 
             file_input.change(
                 fn=setup_viz_dropdowns,
                 inputs=df_state,
-                outputs=[ts_date_col, ts_value_col, dist_col, cat_viz_col, cat_value_col, scatter_x, scatter_y],
+                outputs=[
+                    ts_date_col,
+                    ts_value_col,
+                    dist_col,
+                    cat_viz_col,
+                    cat_value_col,
+                    scatter_x,
+                    scatter_y,
+                ],
             )
-            
             viz_load_btn.click(
                 fn=setup_viz_dropdowns,
                 inputs=df_state,
-                outputs=[ts_date_col, ts_value_col, dist_col, cat_viz_col, cat_value_col, scatter_x, scatter_y],
+                outputs=[
+                    ts_date_col,
+                    ts_value_col,
+                    dist_col,
+                    cat_viz_col,
+                    cat_value_col,
+                    scatter_x,
+                    scatter_y,
+                ],
             )
 
-            # --- Visualization functions ---
-
-            def create_time_series(df, date_col, value_col, agg):
-                if df is None or not date_col or not value_col:
-                    return None
-
-                import matplotlib.pyplot as plt
-
-                temp = df.copy()
-                temp["_date"] = pd.to_datetime(temp[date_col]).dt.to_period("D").astype(str)
-
-                if agg == "sum":
-                    grouped = temp.groupby("_date")[value_col].sum()
-                elif agg == "mean":
-                    grouped = temp.groupby("_date")[value_col].mean()
-                elif agg == "count":
-                    grouped = temp.groupby("_date")[value_col].count()
-                else:
-                    grouped = temp.groupby("_date")[value_col].median()
-
-                fig, ax = plt.subplots(figsize=(10, 5))
-                grouped.plot(ax=ax)
-                ax.set_title(f"{value_col} ({agg}) Over Time")
-                ax.set_xlabel("Date")
-                ax.set_ylabel(f"{value_col} ({agg})")
-                plt.xticks(rotation=45)
-                plt.tight_layout()
-                return fig
-
+            # Visualization generation
             ts_btn.click(
-                fn=create_time_series,
+                fn=create_time_series_plot,
                 inputs=[df_state, ts_date_col, ts_value_col, ts_agg],
                 outputs=ts_plot,
             )
 
-            def create_distribution(df, col, chart_type):
-                if df is None or not col:
-                    return None
-
-                import matplotlib.pyplot as plt
-
-                fig, ax = plt.subplots(figsize=(10, 5))
-
-                if chart_type == "histogram":
-                    df[col].hist(ax=ax, bins=50, edgecolor="black")
-                    ax.set_xlabel(col)
-                    ax.set_ylabel("Frequency")
-                else:
-                    df.boxplot(column=col, ax=ax)
-
-                ax.set_title(f"Distribution of {col}")
-                plt.tight_layout()
-                return fig
-
             dist_btn.click(
-                fn=create_distribution,
+                fn=create_distribution_plot,
                 inputs=[df_state, dist_col, dist_type],
                 outputs=dist_plot,
             )
 
-            def create_category_chart(df, cat_col, value_col, agg):
-                if df is None or not cat_col or not value_col:
-                    return None
-
-                import matplotlib.pyplot as plt
-
-                if agg == "sum":
-                    grouped = df.groupby(cat_col)[value_col].sum()
-                elif agg == "mean":
-                    grouped = df.groupby(cat_col)[value_col].mean()
-                elif agg == "count":
-                    grouped = df.groupby(cat_col)[value_col].count()
-                else:
-                    grouped = df.groupby(cat_col)[value_col].median()
-
-                grouped = grouped.sort_values(ascending=False).head(20)
-
-                fig, ax = plt.subplots(figsize=(10, 6))
-                grouped.plot(kind="bar", ax=ax, edgecolor="black")
-                ax.set_title(f"{value_col} ({agg}) by {cat_col}")
-                ax.set_xlabel(cat_col)
-                ax.set_ylabel(f"{value_col} ({agg})")
-                plt.xticks(rotation=45, ha="right")
-                plt.tight_layout()
-                return fig
-
             cat_btn.click(
-                fn=create_category_chart,
+                fn=lambda df, cat_col, val_col, agg: create_category_bar_chart(
+                    df, cat_col, val_col, agg, TOP_N_CATEGORIES
+                ),
                 inputs=[df_state, cat_viz_col, cat_value_col, cat_agg],
                 outputs=cat_plot,
             )
 
-            def create_scatter(df, x_col, y_col):
-                if df is None or not x_col or not y_col:
-                    return None
-
-                import matplotlib.pyplot as plt
-
-                sample = df if len(df) < 5000 else df.sample(5000)
-
-                fig, ax = plt.subplots(figsize=(10, 6))
-                ax.scatter(sample[x_col], sample[y_col], alpha=0.5, s=10)
-                ax.set_title(f"{y_col} vs {x_col}")
-                ax.set_xlabel(x_col)
-                ax.set_ylabel(y_col)
-                plt.tight_layout()
-                return fig
-
             scatter_btn.click(
-                fn=create_scatter,
+                fn=lambda df, x, y: create_scatter_plot(df, x, y, MAX_SCATTER_POINTS),
                 inputs=[df_state, scatter_x, scatter_y],
                 outputs=scatter_plot,
             )
-
-            def create_correlation_heatmap(df):
-                if df is None:
-                    return None
-
-                import matplotlib.pyplot as plt
-                import seaborn as sns
-
-                numeric_df = df.select_dtypes(include=["number"])
-                if numeric_df.empty:
-                    return None
-
-                corr = numeric_df.corr()
-
-                fig, ax = plt.subplots(figsize=(10, 8))
-                sns.heatmap(corr, annot=True, cmap="coolwarm", center=0, ax=ax, fmt=".2f")
-                ax.set_title("Correlation Heatmap")
-                plt.tight_layout()
-                return fig
 
             corr_btn.click(
                 fn=create_correlation_heatmap,
@@ -506,11 +516,98 @@ def create_dashboard():
                 outputs=scatter_plot,
             )
 
+            # Export visualizations
+            gr.Markdown("---")
+            gr.Markdown("### Export Visualization")
+            gr.Markdown("Generate a chart above, then export it as a PNG file.")
+
+            with gr.Row():
+                export_ts_btn = gr.Button("Export Time Series")
+                export_dist_btn = gr.Button("Export Distribution")
+                export_cat_btn = gr.Button("Export Category Chart")
+                export_scatter_btn = gr.Button("Export Scatter or Correlation")
+
+            png_output = gr.File(label="Download PNG")
+
+            def export_time_series_png(df, date_col, value_col, agg):
+                """Exports a time series plot as a PNG file."""
+                fig = create_time_series_plot(df, date_col, value_col, agg)
+                if fig is None:
+                    return None
+                return save_plot_as_png(fig, "time_series.png")
+
+            export_ts_btn.click(
+                fn=export_time_series_png,
+                inputs=[df_state, ts_date_col, ts_value_col, ts_agg],
+                outputs=png_output,
+            )
+
+            def export_distribution_png(df, col, chart_type):
+                """Exports a distribution plot as a PNG file."""
+                fig = create_distribution_plot(df, col, chart_type)
+                if fig is None:
+                    return None
+                return save_plot_as_png(fig, "distribution.png")
+
+            export_dist_btn.click(
+                fn=export_distribution_png,
+                inputs=[df_state, dist_col, dist_type],
+                outputs=png_output,
+            )
+
+            def export_category_png(df, cat_col, value_col, agg):
+                """Exports a category chart as a PNG file."""
+                fig = create_category_bar_chart(df, cat_col, value_col, agg, TOP_N_CATEGORIES)
+                if fig is None:
+                    return None
+                return save_plot_as_png(fig, "category_chart.png")
+
+            export_cat_btn.click(
+                fn=export_category_png,
+                inputs=[df_state, cat_viz_col, cat_value_col, cat_agg],
+                outputs=png_output,
+            )
+
+            def export_scatter_png(df, x_col, y_col):
+                """Exports a scatter plot as a PNG file."""
+                fig = create_scatter_plot(df, x_col, y_col, MAX_SCATTER_POINTS)
+                if fig is None:
+                    return None
+                return save_plot_as_png(fig, "scatter_plot.png")
+
+            export_scatter_btn.click(
+                fn=export_scatter_png,
+                inputs=[df_state, scatter_x, scatter_y],
+                outputs=png_output,
+            )
+
         # ===============================================================
         # 5. INSIGHTS TAB
         # ===============================================================
         with gr.Tab("Insights"):
-            gr.Markdown("### Insights (Coming Soon)")
+            gr.Markdown("### Automated Insights")
+            gr.Markdown("Generates summary insights, top and bottom performers, and anomaly notes.")
+
+            insights_btn = gr.Button("Generate Insights", variant="primary")
+
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("Top Performers")
+                    top_performers = gr.DataFrame(label="Highest Values")
+
+                with gr.Column():
+                    gr.Markdown("Bottom Performers")
+                    bottom_performers = gr.DataFrame(label="Lowest Values")
+
+            gr.Markdown("---")
+            gr.Markdown("Trends and Anomalies")
+            anomalies_output = gr.Markdown()
+
+            insights_btn.click(
+                fn=generate_all_insights,
+                inputs=df_state,
+                outputs=[top_performers, bottom_performers, anomalies_output],
+            )
 
     return demo
 

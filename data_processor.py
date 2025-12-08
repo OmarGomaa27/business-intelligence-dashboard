@@ -1,13 +1,26 @@
 import pandas as pd
 import numpy as np
 
-import numpy as np
-
 
 def load_data(file):
     """
     Load a CSV or Excel file and return a cleaned pandas DataFrame.
-    Performs type inference and sanitization after loading.
+    Performs basic type inference and sanitization after loading.
+    
+    Parameters
+    ----------
+    file : file-like object
+        The uploaded file. Must be CSV or Excel format.
+
+    Returns
+    -------
+    DataFrame
+        A cleaned pandas DataFrame with inferred data types.
+
+    Raises
+    ------
+    ValueError
+        If the file format is unsupported or cannot be loaded.
     """
     try:
         if file.name.endswith(".csv"):
@@ -26,36 +39,47 @@ def load_data(file):
 
 def clean_and_infer_types(df):
     """
-    Attempts to infer appropriate data types for columns.
-    - Converts date-like columns to datetime if appropriate.
-    - Converts numeric-like object columns to numeric.
-    - Only applies conversions when at least 50% of values are valid.
+    Infer appropriate data types for DataFrame columns.
+    
+    This function:
+    - Converts object columns containing date-like values to datetime.
+    - Converts object columns containing numeric-like values to numeric.
+    - Applies conversions only when at least half of the column values are valid.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Input dataset.
+
+    Returns
+    -------
+    DataFrame
+        Dataset with improved data types.
     """
     df = df.copy()
 
     for col in df.columns:
         col_lower = col.lower()
 
-        # Detect columns likely to contain dates
-        date_indicators = ['date', 'time', 'created', 'updated', 'timestamp']
+        date_indicators = ["date", "time", "created", "updated", "timestamp"]
         likely_date = any(ind in col_lower for ind in date_indicators)
 
-        # Keep existing datetime columns
+        # Preserve existing datetime columns
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             continue
 
-        # Attempt datetime conversion if column is likely a date
+        # Attempt datetime conversion for likely date columns
         if likely_date and df[col].dtype == "object":
             try:
-                converted = pd.to_datetime(df[col], errors="coerce")
+                converted = pd.to_datetime(df[col], dayfirst=True, errors="coerce")
                 if converted.notna().mean() > 0.5:
                     df[col] = converted
                     continue
             except Exception:
                 pass
 
-        # Attempt numeric conversion for object columns
-        if df[col].dtype == "object":
+        # Attempt numeric conversion
+        if df[col].dtype == "object" and not likely_date:
             try:
                 converted = pd.to_numeric(df[col], errors="coerce")
                 if converted.notna().mean() > 0.5:
@@ -67,7 +91,18 @@ def clean_and_infer_types(df):
 
 
 def get_basic_info(df):
-    """Return dataset shape, column names, and data types."""
+    """
+    Return basic dataset information including shape, columns, and data types.
+
+    Parameters
+    ----------
+    df : DataFrame
+
+    Returns
+    -------
+    dict
+        Dictionary containing dataset shape, column names, and data types.
+    """
     return {
         "Shape": list(df.shape),
         "Columns": list(df.columns),
@@ -76,14 +111,35 @@ def get_basic_info(df):
 
 
 def preview_data(df, n=5):
-    """Return the first n rows of the dataset."""
+    """
+    Return the first n rows of the dataset.
+
+    Parameters
+    ----------
+    df : DataFrame
+    n : int
+        Number of rows to preview.
+
+    Returns
+    -------
+    DataFrame
+        First n rows of the dataset.
+    """
     return df.head(n)
 
 
 def numeric_summary(df):
     """
-    Produce descriptive statistics for all numeric columns.
-    Returns an empty DataFrame if no numeric columns exist.
+    Generate descriptive statistics for numeric columns.
+    
+    Parameters
+    ----------
+    df : DataFrame
+
+    Returns
+    -------
+    DataFrame
+        Summary statistics, or an empty DataFrame if no numeric columns are present.
     """
     numeric_df = df.select_dtypes(include=["number"])
     if numeric_df.empty:
@@ -93,9 +149,20 @@ def numeric_summary(df):
 
 def categorical_summary(df):
     """
-    Produce a summary for all categorical columns, including:
-    - number of unique values
-    - most frequent value
+    Generate a summary for categorical columns.
+
+    For each column, reports:
+    - Number of unique values
+    - Most frequent value
+
+    Parameters
+    ----------
+    df : DataFrame
+
+    Returns
+    -------
+    dict
+        Summary statistics for categorical columns.
     """
     cat_df = df.select_dtypes(include=["object", "category"])
     summary = {}
@@ -111,14 +178,33 @@ def categorical_summary(df):
 
 
 def missing_values_report(df):
-    """Return the number of missing values per column."""
+    """
+    Return the number of missing values for each column.
+
+    Parameters
+    ----------
+    df : DataFrame
+
+    Returns
+    -------
+    dict
+        Missing value counts per column.
+    """
     return {col: int(count) for col, count in df.isnull().sum().items()}
 
 
 def correlation_matrix(df):
     """
-    Return the correlation matrix for numeric columns.
-    Returns an empty DataFrame if no numeric columns exist.
+    Compute the correlation matrix for numeric columns.
+
+    Parameters
+    ----------
+    df : DataFrame
+
+    Returns
+    -------
+    DataFrame
+        Correlation matrix, or an empty DataFrame if no numeric columns exist.
     """
     numeric_df = df.select_dtypes(include=["number"])
     if numeric_df.empty:
