@@ -1,5 +1,14 @@
-# Business Intelligence Dashboard
+---
+title: Business Intelligence Dashboard
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 6.24.0
+app_file: app.py
+pinned: false
+---
 
+# Business Intelligence Dashboard
 A modular, interactive Business Intelligence dashboard built with Gradio.
 The application enables users to upload datasets, generate descriptive statistics, apply filters, create visualizations, and obtain automated insights through a browser-based interface.
 
